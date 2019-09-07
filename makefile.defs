@@ -1,0 +1,1 @@
+export PREPROC_CMD = /home/tanaka/Ac6/SystemWorkbench/plugins/fr.ac6.mcu.externaltools.arm-none.linux64_1.17.0.201812190825/tools/compiler/bin/arm-none-eabi-cpp -E -P
