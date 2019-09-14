@@ -2,34 +2,36 @@
 #include "ros.h"
 #include "std_msgs/Float32MultiArray.h"
 #include "std_msgs/Int32.h"
+#include "std_msgs/Bool.h"
 #include "library/scrp_master.hpp"
 #include "library/rotary_inc.hpp"
 #include "library/gy521.hpp"
 
-#define MAXPWM 0.98
 #define Motor_NUM 4
-#define PERIOD 64
 
-#define PI2_3 2.0943951023931954923084289221863
-#define PI_3 1.0471975511965977461542144610932
-#define PI_180 0.017453293
-#define PI_4 0.785398163
-#define Motor_L 857
-#define Rotary_L 610
+constexpr int PERIOD = 64;
+constexpr double MAXPWM = 0.98;
 
-#define kp 0.00002 //モーター
-#define ki 0.003
-#define kd 0.0000007
+constexpr double PI2_3 = M_PI * 2 / 3;
+constexpr double PI_3  = M_PI / 3;
+constexpr double PI_180 = M_PI / 180;
+constexpr double PI_4 = M_PI / 4;
+constexpr double Motor_L = 857;
+constexpr double Rotary_L = 610;
+
+double kp = 0.0003; //モーター
+double ki = 0.005;
+double kd = 0.0000007;
 
 double Kp = 1.6; //自動移動
 double Ki = 2.2;
 double Kd = 0.001;
 
-double tKp = 10.0;
+double tKp = 10.0;//回転
 double tKi = 0.8;
 double tKd = 20;
 
-const PinName pwm_pin[7][3] = {
+constexpr PinName pwm_pin[7][3] = {
     {PB_1 ,PA_11,PC_6 },
     {PB_13,PB_14,PB_2 },
     {PB_4 ,PB_5 ,PB_15},
@@ -39,7 +41,7 @@ const PinName pwm_pin[7][3] = {
     {PA_0 ,PA_1 ,PB_0 }
 };
 
-const PinName rotary_pin[8][2] = {
+constexpr PinName rotary_pin[8][2] = {
     {PC_10,PC_11},
     {PC_4 ,PA_13},
     {PA_14,PA_15},
@@ -54,6 +56,7 @@ const PinName rotary_pin[8][2] = {
 
 DigitalOut led(PA_5);
 DigitalIn button(PC_13);
+DigitalIn emergency(PA_4);//非常停止を読む
 Timer motortimer;
 
 PwmOut* Motor[Motor_NUM][2];
@@ -155,8 +158,8 @@ inline void move(){
         }
         diffV[j] = (nowV[j] - lastV[j]) / now_t;
         lastV[j] = nowV[j];
-        driveS[j] = 0.0003 * driveV[j] + diff[j] * kp + errer[j] * ki - diffV[j] * kd;
-        Drive(j,driveS[j]);
+        driveS[j] = 0.0004 * driveV[j] + diff[j] * kp + errer[j] * ki - diffV[j] * kd;
+        Drive(j,-driveS[j]);
     }
 }
 
@@ -214,21 +217,28 @@ void getData(const std_msgs::Float32MultiArray &msgs){
             VMAX = msgs.data[2];
             AMAX = msgs.data[3];
             break;
-        case 6:
+        case 6://移動PID
             Kp = msgs.data[1];
             Ki = msgs.data[2];
             Kd = msgs.data[3];
             break;
-        case 7:
+        case 7://回転PID
             tKp = msgs.data[1];
             tKi = msgs.data[2];
             tKd = msgs.data[3];
+            break;
+        case 8://モーターPID
+            kp = msgs.data[1];
+            ki = msgs.data[2];
+            kd = msgs.data[3];
             break;
     }
 }
 
 std_msgs::Float32MultiArray now;
+std_msgs::Bool emergency_msg;
 ros::Publisher place("place",&now);
+ros::Publisher emergency_pub("emergency",&emergency_msg);
 ros::Subscriber<std_msgs::Float32MultiArray> sub("motor",&getData);
 //ros::Subscriber<std_msgs::Int32> mdd("Motor_Serial",&sendSerial);
 
@@ -236,12 +246,16 @@ int main(){
     nh.getHardware()->setBaud(115200);
     nh.initNode();
     nh.advertise(place);
+    nh.advertise(emergency_pub);
     nh.subscribe(sub);
     //nh.subscribe(mdd);
     now.data_length = 8;
     now.data = (float*)malloc(sizeof(float)*now.data_length);
+    button.mode(PullUp);
+    emergency.mode(PullUp);
     int i,j;
     bool flag = false;
+    bool emergency_last = !emergency;//最初に強制的に送信させる。
     double diff[Motor_NUM],Pspeed[Motor_NUM];
     double nowVx,nowVy,nowVt;
     double cos_yaw_2,sin_yaw_2;
@@ -339,15 +353,23 @@ int main(){
         }else if(button && flag){
             flag = false;
         }
+        if(emergency != emergency_last){//非常停止監視
+        	emergency_last = emergency;
+        	emergency_msg.data = emergency;
+        	emergency_pub.publish(&emergency_msg);
+        	if(emergency){
+        		//safe();//非常停止時にプログラムも停止する。
+        	}
+        }
         if(automove){
             now_t = autotimer.read();
             autotimer.reset();
             use_amax = AMAX * now_t;
             
             if(limit_move >= 0){
-                if(Limit[limit_move][0]->read() && Limit[limit_move][1]->read()){//両方押された時 押された時が１
+                if(Limit[limit_move][0]->read() && Limit[limit_move][1]->read()){//両方押された時 押された時が１//NCにつなぐ
                     diff_x = 0;
-                    //X = 0;
+                    X = 0;
                 }else{
                     if(Limit[limit_move][0]->read()){//赤前 青後
                         diff_yaw = 0.001;
