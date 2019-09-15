@@ -64,7 +64,6 @@ DigitalOut* Led[Motor_NUM];
 RotaryInc* Speed[Motor_NUM];
 RotaryInc* Place[Motor_NUM];
 DigitalIn* Limit[2][2];
-GY521 *gy;
 bool Ok = false;
 double X = 0,Y = 0,T = 0,Yaw = 0;//オドメトリ
 double Vx = 0,Vy = 0,Omega = 0;//速度
@@ -76,6 +75,9 @@ bool ablemove = true;
 bool automove = false;
 int limit_move = -1;
 Timer autotimer;
+
+I2C i2c(PB_3,PB_10);
+GY521 gyro(i2c);
 
 ros::NodeHandle nh;
 /*
@@ -105,7 +107,7 @@ void Reset(){
     }else{
         led.write(0);
         safe();
-        gy->reset(0);
+        gyro.reset(0);
         X = 0;
         Y = 0;
         T = 0;
@@ -209,7 +211,7 @@ void getData(const std_msgs::Float32MultiArray &msgs){
             X = msgs.data[1];
             Y = msgs.data[2];
             T = (double)msgs.data[3]/180.0*M_PI;
-            gy->reset(msgs.data[3]);
+            gyro.reset(msgs.data[3]);
             led.write(1);
             break;
         case 5:
@@ -281,7 +283,6 @@ int main(){
             Limit[i][j]->mode(PullUp);
         }
     }
-    I2C i2c(PB_3,PB_10);
     Timer loop;
     loop.start();
     while(button && !Ok){
@@ -293,9 +294,7 @@ int main(){
     }
     led.write(0);
     Ok = true;
-    GY521 gyro(i2c);
-    //gyro.reset(0);
-    gy = &gyro;
+    gyro.reset(0);
     motortimer.start();
     led.write(1);
     while(true){
@@ -322,7 +321,7 @@ int main(){
             place.publish(&now);
             loop.reset();
         }
-        Yaw *= 0.01745329251994329576923690768489;//PI/180
+        Yaw *= PI_180;
         for(i = 0;i<Motor_NUM;++i){
             diff[i] = Place[i]->diff() * R;//Place
             Pspeed[i] = Speed[i]->getSpeed();//Place
@@ -369,17 +368,21 @@ int main(){
             if(limit_move >= 0){
                 if(Limit[limit_move][0]->read() && Limit[limit_move][1]->read()){//両方押された時 押された時が１//NCにつなぐ
                     diff_x = 0;
+                    diff_yaw = 0;
+                    errer_x = 0;
+                    errer_omega = 0;
                     X = 0;
+                    Yaw = 0;
                 }else{
                     if(Limit[limit_move][0]->read()){//赤前 青後
-                        diff_yaw = 0.001;
+                        diff_yaw = 0.005;
                     }else if(Limit[limit_move][1]->read()){//赤後 青前
-                        diff_yaw = -0.001;
+                        diff_yaw = -0.005;
                     }
                     if(limit_move == 0){
-                        diff_x = -100;
+                        diff_x = -50;
                     }else{
-                        diff_x = 100;
+                        diff_x = 50;
                     }
                 }
             }else{
@@ -421,7 +424,7 @@ int main(){
                 Omega = pid_omega;
                 errer_omega += -diff_yaw * now_t;
             }
-            if(fabs(diff_x) < 5  && fabs(diff_y) < 5 && fabs(diff_yaw) < (PI_180)
+            if(fabs(diff_x) < 20  && fabs(diff_y) < 20 && fabs(diff_yaw) < (PI_180)
                     && fabs(nowVx) < 15 && fabs(nowVy) < 15 && fabs(nowVt) < 0.018){
                 Vx = 0;
                 Vy = 0;
