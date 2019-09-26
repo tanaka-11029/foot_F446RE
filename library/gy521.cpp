@@ -1,7 +1,7 @@
 #include "gy521.hpp"
 
-const double GY521_LSB_MAP[4] = {131, 65.5, 32.8, 16.4};
-const unsigned int dev_id = 0x68 <<  1;
+constexpr double GY521_LSB_MAP[4] = {131, 65.5, 32.8, 16.4};
+constexpr unsigned int dev_id = 0x68 <<  1;
 
 GY521::GY521(I2C &i2c,int bit,int calibration,double user_reg):i2c_(i2c),bit_(bit),calibration_(calibration){
     char check;

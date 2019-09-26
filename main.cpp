@@ -2,7 +2,7 @@
 #include "ros.h"
 #include "std_msgs/Float32MultiArray.h"
 #include "std_msgs/Int32.h"
-#include "std_msgs/Bool.h"
+#include "std_msgs/Int8.h"
 #include "library/scrp_master.hpp"
 #include "library/rotary_inc.hpp"
 #include "library/gy521.hpp"
@@ -23,9 +23,9 @@ double kp = 0.0003; //モーター
 double ki = 0.005;
 double kd = 0.0000007;
 
-double Kp = 1.6; //自動移動
-double Ki = 2.2;
-double Kd = 0.001;
+double Kp = 3.0; //自動移動
+double Ki = 20;
+double Kd = 0.01;
 
 double tKp = 10.0;//回転
 double tKi = 0.8;
@@ -238,9 +238,9 @@ void getData(const std_msgs::Float32MultiArray &msgs){
 }
 
 std_msgs::Float32MultiArray now;
-std_msgs::Bool emergency_msg;
+std_msgs::Int8 switch_msg;
 ros::Publisher place("place",&now);
-ros::Publisher emergency_pub("emergency",&emergency_msg);
+ros::Publisher switch_pub("switch",&switch_msg);
 ros::Subscriber<std_msgs::Float32MultiArray> sub("motor",&getData);
 //ros::Subscriber<std_msgs::Int32> mdd("Motor_Serial",&sendSerial);
 
@@ -248,7 +248,7 @@ int main(){
     nh.getHardware()->setBaud(115200);
     nh.initNode();
     nh.advertise(place);
-    nh.advertise(emergency_pub);
+    nh.advertise(switch_pub);
     nh.subscribe(sub);
     //nh.subscribe(mdd);
     now.data_length = 8;
@@ -257,7 +257,6 @@ int main(){
     emergency.mode(PullUp);
     int i,j;
     bool flag = false;
-    bool emergency_last = !emergency;//最初に強制的に送信させる。
     double diff[Motor_NUM],Pspeed[Motor_NUM];
     double nowVx,nowVy,nowVt;
     double cos_yaw_2,sin_yaw_2;
@@ -319,6 +318,11 @@ int main(){
             now.data[6] = nowVt;
             now.data[7] = automove;
             place.publish(&now);
+            switch_msg.data = (Limit[0][0]->read() << 2) + (Limit[1][1]->read() << 1) + emergency;
+            switch_pub.publish(&switch_msg);
+            if(emergency){
+           		//safe();//非常停止時にプログラムも停止する。
+           	}
             loop.reset();
         }
         Yaw *= PI_180;
@@ -352,14 +356,6 @@ int main(){
         }else if(button && flag){
             flag = false;
         }
-        if(emergency != emergency_last){//非常停止監視
-        	emergency_last = emergency;
-        	emergency_msg.data = emergency;
-        	emergency_pub.publish(&emergency_msg);
-        	if(emergency){
-        		//safe();//非常停止時にプログラムも停止する。
-        	}
-        }
         if(automove){
             now_t = autotimer.read();
             autotimer.reset();
@@ -373,16 +369,18 @@ int main(){
                     errer_omega = 0;
                     X = 0;
                     Yaw = 0;
+                    Vx = 0;
+                    Omega = 0;
                 }else{
                     if(Limit[limit_move][0]->read()){//赤前 青後
-                        diff_yaw = 0.005;
+                        diff_yaw = 0.002;
                     }else if(Limit[limit_move][1]->read()){//赤後 青前
-                        diff_yaw = -0.005;
+                        diff_yaw = -0.002;
                     }
                     if(limit_move == 0){
-                        diff_x = -50;
+                        diff_x = -10;
                     }else{
-                        diff_x = 50;
+                        diff_x = 10;
                     }
                 }
             }else{
@@ -424,7 +422,7 @@ int main(){
                 Omega = pid_omega;
                 errer_omega += -diff_yaw * now_t;
             }
-            if(fabs(diff_x) < 20  && fabs(diff_y) < 20 && fabs(diff_yaw) < (PI_180)
+            if(fabs(diff_x) < 10  && fabs(diff_y) < 10 && fabs(diff_yaw) < (PI_180)
                     && fabs(nowVx) < 15 && fabs(nowVy) < 15 && fabs(nowVt) < 0.018){
                 Vx = 0;
                 Vy = 0;
