@@ -23,8 +23,8 @@ double kp = 0.0003; //モーター
 double ki = 0.005;
 double kd = 0.0000007;
 
-double Kp = 3.0; //自動移動
-double Ki = 20;
+double Kp = 2.2; //自動移動 //3.0
+double Ki = 10; //20
 double Kd = 0.01;
 
 double tKp = 10.0;//回転
@@ -254,7 +254,7 @@ int main(){
     now.data_length = 8;
     now.data = (float*)malloc(sizeof(float)*now.data_length);
     button.mode(PullUp);
-    emergency.mode(PullUp);
+    emergency.mode(PullDown);
     int i,j;
     bool flag = false;
     double diff[Motor_NUM],Pspeed[Motor_NUM];
@@ -373,14 +373,14 @@ int main(){
                     Omega = 0;
                 }else{
                     if(Limit[limit_move][0]->read()){//赤前 青後
-                        diff_yaw = 0.002;
+                        diff_yaw = 0.001;
                     }else if(Limit[limit_move][1]->read()){//赤後 青前
-                        diff_yaw = -0.002;
+                        diff_yaw = -0.001;
                     }
                     if(limit_move == 0){
-                        diff_x = -10;
+                        diff_x = -20;
                     }else{
-                        diff_x = 10;
+                        diff_x = 20;
                     }
                 }
             }else{
