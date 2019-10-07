@@ -318,10 +318,10 @@ int main(){
             now.data[6] = nowVt;
             now.data[7] = automove;
             place.publish(&now);
-            switch_msg.data = (Limit[0][0]->read() << 2) + (Limit[1][1]->read() << 1) + emergency;
+            switch_msg.data = (Limit[0][0]->read() << 2) + (Limit[1][1]->read() << 1) + !emergency;
             switch_pub.publish(&switch_msg);
-            if(emergency){
-           		//safe();//非常停止時にプログラムも停止する。
+            if(!emergency){
+           		safe();//非常停止時にプログラムも停止する。
            	}
             loop.reset();
         }
@@ -360,7 +360,7 @@ int main(){
             now_t = autotimer.read();
             autotimer.reset();
             use_amax = AMAX * now_t;
-            
+
             if(limit_move >= 0){
                 if(Limit[limit_move][0]->read() && Limit[limit_move][1]->read()){//両方押された時 押された時が１//NCにつなぐ
                     diff_x = 0;
@@ -373,14 +373,14 @@ int main(){
                     Omega = 0;
                 }else{
                     if(Limit[limit_move][0]->read()){//赤前 青後
-                        diff_yaw = 0.001;
+                        diff_yaw = 0.002;
                     }else if(Limit[limit_move][1]->read()){//赤後 青前
-                        diff_yaw = -0.001;
+                        diff_yaw = -0.002;
                     }
                     if(limit_move == 0){
-                        diff_x = -20;
+                        diff_x = -10;
                     }else{
-                        diff_x = 20;
+                        diff_x = 10;
                     }
                 }
             }else{

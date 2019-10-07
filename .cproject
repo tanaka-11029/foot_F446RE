@@ -269,7 +269,7 @@
 									<listOptionValue builtIn="false" value="NDEBUG"/>
 								</option>
 								<option id="gnu.cpp.compiler.option.include.files.147908601" name="Include files (-include)" superClass="gnu.cpp.compiler.option.include.files" useByScannerDiscovery="false" valueType="includeFiles">
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/F446RE_temp/mbed_config.h}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/mbed_config.h}&quot;"/>
 								</option>
 								<option id="gnu.cpp.compiler.option.dialect.std.008270767" name="Language standard" superClass="gnu.cpp.compiler.option.dialect.std" useByScannerDiscovery="true" value="gnu.cpp.compiler.dialect.gnu11" valueType="enumerated"/>
 								<option id="gnu.cpp.compiler.option.warnings.allwarn.103005924" name="All warnings (-Wall)" superClass="gnu.cpp.compiler.option.warnings.allwarn" useByScannerDiscovery="false" value="true" valueType="boolean"/>
