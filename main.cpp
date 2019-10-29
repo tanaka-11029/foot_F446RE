@@ -19,8 +19,8 @@ constexpr double PI_4 = M_PI / 4;
 constexpr double Motor_L = 857;
 constexpr double Rotary_L = 610;
 
-double kp = 0.0003; //モーター
-double ki = 0.005;
+double kp = 0.0007; //モーター
+double ki = 0.01;
 double kd = 0.0000007;
 
 double Kp = 2.2; //自動移動 //3.0
@@ -30,6 +30,15 @@ double Kd = 0.01;
 double tKp = 10.0;//回転
 double tKi = 0.8;
 double tKd = 20;
+
+double pidk[4][4] = {
+		{0.0004,0.0003,0.005,0.0000007},
+		{0.0004,0.0003,0.005,0.0000007},
+		{0.0004,0.0003,0.005,0.0000007},
+		{0.0004,0.0003,0.005,0.0000007}
+};
+
+double driveV[Motor_NUM];
 
 constexpr PinName pwm_pin[7][3] = {
     {PB_1 ,PA_11,PC_6 },
@@ -57,6 +66,7 @@ constexpr PinName rotary_pin[8][2] = {
 DigitalOut led(PA_5);
 DigitalIn button(PC_13);
 DigitalIn emergency(PA_4);//非常停止を読む
+DigitalIn emergency_wireless(PA_0);
 Timer motortimer;
 
 PwmOut* Motor[Motor_NUM][2];
@@ -69,6 +79,9 @@ double X = 0,Y = 0,T = 0,Yaw = 0;//オドメトリ
 double Vx = 0,Vy = 0,Omega = 0;//速度
 double driveS[Motor_NUM],nowV[Motor_NUM];
 double goal_x,goal_y,goal_yaw;
+double errer_x = 0;
+double errer_y = 0;
+double errer_omega = 0;
 double VMAX = 1200,AMAX = 300;
 
 bool ablemove = true;
@@ -134,7 +147,7 @@ inline bool Drive(int id,double pwm){//モーターを回す
 }
 
 inline void move(){
-    static double diff[Motor_NUM],errer[Motor_NUM],diffV[Motor_NUM],lastV[Motor_NUM],driveV[Motor_NUM],now_t,cos_yaw,sin_yaw;
+    static double diff[Motor_NUM],errer[Motor_NUM],diffV[Motor_NUM],lastV[Motor_NUM]/*,driveV[Motor_NUM]*/,now_t,cos_yaw,sin_yaw;
     static int j;
 #if Motor_NUM == 3
     driveV[0] = Vx*cos(Yaw)         + Vy*sin(Yaw)         + Omega*Motor_L;
@@ -150,7 +163,7 @@ inline void move(){
 #endif
     now_t = motortimer.read();
     motortimer.reset();
-    for(j = 0;j < Motor_NUM;j++){
+    for(j = 0;j < 4;j++){
         nowV[j] = Speed[j]->getSpeed();
         diff[j] = driveV[j] - nowV[j];
         if(nowV[j] == 0 && driveV[j] == 0 && errer[j] != 0){
@@ -160,7 +173,7 @@ inline void move(){
         }
         diffV[j] = (nowV[j] - lastV[j]) / now_t;
         lastV[j] = nowV[j];
-        driveS[j] = 0.0004 * driveV[j] + diff[j] * kp + errer[j] * ki - diffV[j] * kd;
+        driveS[j] = pidk[j][0] * driveV[j] + diff[j] * pidk[j][1] + errer[j] * pidk[j][2] - diffV[j] * pidk[j][3];
         Drive(j,-driveS[j]);
     }
 }
@@ -188,6 +201,9 @@ void getData(const std_msgs::Float32MultiArray &msgs){
             goal_y = msgs.data[2];
             goal_yaw = msgs.data[3];
             if(!automove){
+                errer_x = 0;
+                errer_y = 0;
+                errer_omega = 0;
                 automove = true;
                 autotimer.reset();
                 autotimer.start();
@@ -230,16 +246,22 @@ void getData(const std_msgs::Float32MultiArray &msgs){
             tKd = msgs.data[3];
             break;
         case 8://モーターPID
-            kp = msgs.data[1];
-            ki = msgs.data[2];
-            kd = msgs.data[3];
+            pidk[3][1] = msgs.data[1];
+            pidk[3][2] = msgs.data[2];
+            pidk[3][3] = msgs.data[3];
+            break;
+        case 9://モーターPID
+            pidk[2][1] = msgs.data[1];
+            pidk[2][2] = msgs.data[2];
+            pidk[2][3] = msgs.data[3];
             break;
     }
 }
 
-std_msgs::Float32MultiArray now;
+std_msgs::Float32MultiArray now,rotary_speed;
 std_msgs::Int8 switch_msg;
 ros::Publisher place("place",&now);
+ros::Publisher rotary_motor("rotary",&rotary_speed);
 ros::Publisher switch_pub("switch",&switch_msg);
 ros::Subscriber<std_msgs::Float32MultiArray> sub("motor",&getData);
 //ros::Subscriber<std_msgs::Int32> mdd("Motor_Serial",&sendSerial);
@@ -248,9 +270,12 @@ int main(){
     nh.getHardware()->setBaud(115200);
     nh.initNode();
     nh.advertise(place);
+    nh.advertise(rotary_motor);
     nh.advertise(switch_pub);
     nh.subscribe(sub);
     //nh.subscribe(mdd);
+    rotary_speed.data_length = 8;
+    rotary_speed.data = (float*)malloc(sizeof(float)*rotary_speed.data_length);
     now.data_length = 8;
     now.data = (float*)malloc(sizeof(float)*now.data_length);
     button.mode(PullUp);
@@ -264,16 +289,13 @@ int main(){
     double now_t,use_amax;
     const double R = 2 * 25.4 * M_PI / 256;
     double pid_v_x,pid_v_y,pid_omega;
-    double errer_x = 0;
-    double errer_y = 0;
-    double errer_omega = 0;
     for(i = 0;i < Motor_NUM;i++){
         Led[i] = new DigitalOut(pwm_pin[i][2]);
         Motor[i][0] = new PwmOut(pwm_pin[i][0]);
         Motor[i][1] = new PwmOut(pwm_pin[i][1]);
         Motor[i][0]->period_us(PERIOD);
         Motor[i][1]->period_us(PERIOD);
-        Speed[i] = new RotaryInc(rotary_pin[i][0],rotary_pin[i][1],2*50.8*M_PI,256,2);
+        Speed[i] = new RotaryInc(rotary_pin[i][1],rotary_pin[i][0],2*50.8*M_PI,256,2);
         Place[i] = new RotaryInc(rotary_pin[i+Motor_NUM][0],rotary_pin[i+Motor_NUM][1],1);
     }
     for(i = 0;i < 2;i++){
@@ -307,7 +329,7 @@ int main(){
         nh.spinOnce();
         gyro.updata();
         Yaw = gyro.yaw;
-        if(loop.read_ms() > 20){//50msごとに通信する
+        if(loop.read_ms() > 30){//50msごとに通信する
             //データ送信
             now.data[0] = X;
             now.data[1] = Y;
@@ -318,6 +340,15 @@ int main(){
             now.data[6] = nowVt;
             now.data[7] = automove;
             place.publish(&now);
+            rotary_speed.data[0] = driveS[0];//X;
+            rotary_speed.data[1] = Pspeed[0];//Y;
+            rotary_speed.data[2] = driveS[1];//T;
+            rotary_speed.data[3] = Pspeed[1];//Yaw;
+            rotary_speed.data[4] = driveS[2];//nowVx;
+            rotary_speed.data[5] = Pspeed[2];//nowVy;
+            rotary_speed.data[6] = driveS[3];//nowVt;
+            rotary_speed.data[7] = Pspeed[3];//automove;
+            rotary_motor.publish(&rotary_speed);
             switch_msg.data = (Limit[0][0]->read() << 2) + (Limit[1][1]->read() << 1) + !emergency;
             switch_pub.publish(&switch_msg);
             if(!emergency){
@@ -328,7 +359,7 @@ int main(){
         Yaw *= PI_180;
         for(i = 0;i<Motor_NUM;++i){
             diff[i] = Place[i]->diff() * R;//Place
-            Pspeed[i] = Speed[i]->getSpeed();//Place
+            Pspeed[i] = nowV[i];//Speed[i]->getSpeed();//Place
         }
         //オドメトリ計算
 #if Motor_NUM == 3
